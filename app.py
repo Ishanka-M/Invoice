@@ -6,47 +6,46 @@ import io
 import time
 
 # පිටුවේ සැකසුම්
-st.set_page_config(page_title="Bulk Invoice Extractor", layout="wide")
+st.set_page_config(page_title="Invoice Data Extractor", layout="wide")
 
-# --- SIDEBAR (සැකසුම්) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.title("⚙️ සැකසුම්")
-    api_key = st.text_input("Gemini API Key එක ලබා දෙන්න:", type="password")
+    st.title("⚙️ Configuration")
+    api_key = st.text_input("Enter Gemini API Key:", type="password")
     st.markdown("---")
-    st.info("මෙමගින් Invoice කිහිපයක් එකවර පරීක්ෂා කර තනි Excel ගොනුවක් සාදා දෙයි.")
+    st.info("නොමිලේ භාවිතා කළ හැකි Gemini 2.5 Flash-Lite මෙහි භාවිතා වේ.")
 
 # --- MAIN UI ---
-st.title("📑 Bulk Invoice to Excel Converter")
-st.write("Invoice කිහිපයක් (Images/PDFs) එකවර තෝරන්න (Select Multiple Files).")
+st.title("📑 Professional Invoice to Excel Converter")
+st.write("Invoice කිහිපයක් එකවර තෝරා Product Code සහ Description ඇතුළු සියලු දත්ත Excel එකට ගන්න.")
 
 if api_key:
     genai.configure(api_key=api_key.strip())
     model = genai.GenerativeModel('gemini-2.5-flash-lite')
 
-    # Multiple File Uploader (මෙතැන 'accept_multiple_files=True' ලෙස සකසා ඇත)
-    uploaded_files = st.file_uploader("Invoice Files තෝරන්න...", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Invoice Files (Images/PDFs) තෝරන්න...", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
 
     if uploaded_files:
-        st.success(f"ගොනු {len(uploaded_files)} ක් හඳුනා ගන්නා ලදී.")
-        
-        if st.button("සියලුම දත්ත ලබා ගන්න (Extract All)"):
-            all_extracted_data = [] # සියලුම Invoice වල දත්ත ගබඩා කිරීමට ලැයිස්තුවක්
-            
+        if st.button("Extract All Data"):
+            all_rows = []
             progress_bar = st.progress(0)
-            status_text = st.empty()
-
+            
             for index, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"කියවමින් පවතී: {uploaded_file.name} ({index+1}/{len(uploaded_files)})")
-                
                 try:
-                    # AI Prompt
+                    # AI Prompt - මෙහිදී Product Code / Description එකම තීරුවක ඇති බව පවසා ඇත
                     prompt = """
-                    Extract the following from this invoice and return ONLY raw JSON:
-                    - "Invoice No": string
-                    - "Date": string
-                    - "Vendor Name": string
-                    - "Total Amount": number
-                    - "Items": list of objects (Description, Quantity, Price)
+                    Extract data from this invoice image and format it as JSON.
+                    For the items table, ensure you capture:
+                    - "Invoice No"
+                    - "Delivery No"
+                    - "Product Code / Description" (Extract the full text in that column)
+                    - "Unit of Measure"
+                    - "Quantity"
+                    - "Net Price"
+                    - "Amount"
+
+                    Return ONLY a JSON object with a key called "items" which is a list of these objects.
+                    Example format: {"items": [{"Invoice No": "...", "Product Code / Description": "...", "Quantity": 10, ...}]}
                     """
 
                     doc_content = {
@@ -54,68 +53,45 @@ if api_key:
                         "data": uploaded_file.getvalue()
                     }
 
-                    # AI එකෙන් Response එක ලබා ගැනීම
                     response = model.generate_content([prompt, doc_content])
                     
-                    # JSON පිරිසිදු කිරීම
+                    # JSON Extract කරගැනීම
                     clean_json = response.text.replace('```json', '').replace('```', '').strip()
                     data = json.loads(clean_json)
-
-                    # දත්ත වගුවකට ගැලපෙන සේ සැකසීම
-                    inv_no = data.get("Invoice No", "N/A")
-                    inv_date = data.get("Date", "N/A")
-                    vendor = data.get("Vendor Name", "N/A")
                     
-                    # Items තිබේ නම් ඒවා එකින් එක DataFrame එකට එකතු කිරීම
-                    items = data.get("Items", [])
-                    if items:
-                        for item in items:
-                            item.update({
-                                "File Name": uploaded_file.name,
-                                "Invoice No": inv_no,
-                                "Date": inv_date,
-                                "Vendor": vendor
-                            })
-                            all_extracted_data.append(item)
-                    else:
-                        # Item විස්තර නැතිනම් මූලික දත්ත පමණක් එක් කිරීම
-                        all_extracted_data.append({
-                            "File Name": uploaded_file.name,
-                            "Invoice No": inv_no,
-                            "Date": inv_date,
-                            "Vendor": vendor,
-                            "Total Amount": data.get("Total Amount", 0)
-                        })
-
-                    # Free API එකේ Rate Limit එක ඉක්මවා නොයෑමට තත්පරයක විරාමයක් (Optional)
-                    time.sleep(1) 
+                    items = data.get("items", [])
+                    for item in items:
+                        item["Source File"] = uploaded_file.name # කුමන File එකෙන්ද ආවේ කියා හඳුනා ගැනීමට
+                        all_rows.append(item)
 
                 except Exception as e:
-                    st.error(f"Error in {uploaded_file.name}: {e}")
+                    st.error(f"Error processing {uploaded_file.name}: {e}")
                 
-                # Progress Bar එක යාවත්කාලීන කිරීම
                 progress_bar.progress((index + 1) / len(uploaded_files))
 
-            status_text.text("සියලුම දත්ත ලබා ගැනීම අවසන්!")
-
-            # සම්පූර්ණ දත්ත Pandas DataFrame එකකට හැරවීම
-            if all_extracted_data:
-                final_df = pd.DataFrame(all_extracted_data)
+            # DataFrame එක සෑදීම
+            if all_rows:
+                df = pd.DataFrame(all_rows)
                 
-                st.subheader("සම්පූර්ණ දත්ත වගුව")
-                st.dataframe(final_df, use_container_width=True)
+                # තීරු පිළිවෙළට සකස් කිරීම
+                cols_order = ["Source File", "Invoice No", "Delivery No", "Product Code / Description", "Unit of Measure", "Quantity", "Net Price", "Amount"]
+                df = df[cols_order]
 
-                # Excel ගොනුව සෑදීම
+                st.subheader("Extracted Data Preview")
+                st.dataframe(df, use_container_width=True)
+
+                # Excel Download
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                    final_df.to_excel(writer, index=False, sheet_name='All_Invoices')
+                    df.to_excel(writer, index=False, sheet_name='Invoices')
                 
                 st.download_button(
                     label="📥 සියලුම දත්ත Excel ලෙස බාගත කරගන්න",
                     data=excel_buffer.getvalue(),
-                    file_name="All_Invoices_Summary.xlsx",
+                    file_name="Invoice_Data_Summary.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-
+            else:
+                st.warning("දත්ත හඳුනා ගැනීමට නොහැකි විය.")
 else:
-    st.warning("⚠️ කරුණාකර වම් පස ඇති Sidebar එකට API Key එක ලබා දෙන්න.")
+    st.warning("කරුණාකර API Key එක ඇතුළත් කරන්න.")
