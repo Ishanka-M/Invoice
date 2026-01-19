@@ -6,7 +6,7 @@ import io
 import time
 
 # පිටුවේ සැකසුම්
-st.set_page_config(page_title="Invoice Data Extractor", layout="wide")
+st.set_page_config(page_title="Invoice Data Extractor", layout="wide", page_icon="🧾")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -17,7 +17,7 @@ with st.sidebar:
 
 # --- MAIN UI ---
 st.title("📑 Professional Invoice to Excel Converter")
-st.write("Invoice කිහිපයක් එකවර තෝරා Product Code සහ Description ඇතුළු සියලු දත්ත Excel එකට ගන්න.")
+st.write("Invoice කිහිපයක් එකවර තෝරා සියලු දත්ත Excel එකට ලබා ගන්න.")
 
 if api_key:
     genai.configure(api_key=api_key.strip())
@@ -32,20 +32,21 @@ if api_key:
             
             for index, uploaded_file in enumerate(uploaded_files):
                 try:
-                    # AI Prompt - මෙහිදී Product Code / Description එකම තීරුවක ඇති බව පවසා ඇත
+                    # AI Prompt - Customer PO එකත් ලබා ගැනීමට උපදෙස් දී ඇත
                     prompt = """
                     Extract data from this invoice image and format it as JSON.
-                    For the items table, ensure you capture:
+                    Ensure you capture the following fields:
                     - "Invoice No"
                     - "Delivery No"
-                    - "Product Code / Description" (Extract the full text in that column)
+                    - "Customer PO" (Look for Customer Purchase Order number)
+                    - "Product Code / Description"
                     - "Unit of Measure"
                     - "Quantity"
                     - "Net Price"
                     - "Amount"
 
                     Return ONLY a JSON object with a key called "items" which is a list of these objects.
-                    Example format: {"items": [{"Invoice No": "...", "Product Code / Description": "...", "Quantity": 10, ...}]}
+                    Example: {"items": [{"Invoice No": "...", "Customer PO": "...", "Product Code / Description": "...", "Quantity": 10, ...}]}
                     """
 
                     doc_content = {
@@ -61,7 +62,7 @@ if api_key:
                     
                     items = data.get("items", [])
                     for item in items:
-                        item["Source File"] = uploaded_file.name # කුමන File එකෙන්ද ආවේ කියා හඳුනා ගැනීමට
+                        item["Source File"] = uploaded_file.name
                         all_rows.append(item)
 
                 except Exception as e:
@@ -73,8 +74,14 @@ if api_key:
             if all_rows:
                 df = pd.DataFrame(all_rows)
                 
-                # තීරු පිළිවෙළට සකස් කිරීම
-                cols_order = ["Source File", "Invoice No", "Delivery No", "Product Code / Description", "Unit of Measure", "Quantity", "Net Price", "Amount"]
+                # තීරු පිළිවෙළට සකස් කිරීම (Customer PO ඇතුළත්ව)
+                cols_order = ["Source File", "Invoice No", "Delivery No", "Customer PO", "Product Code / Description", "Unit of Measure", "Quantity", "Net Price", "Amount"]
+                
+                # Column එකක් නැතිනම් එය හිස්ව පෙන්වීමට
+                for col in cols_order:
+                    if col not in df.columns:
+                        df[col] = "N/A"
+                
                 df = df[cols_order]
 
                 st.subheader("Extracted Data Preview")
@@ -93,5 +100,32 @@ if api_key:
                 )
             else:
                 st.warning("දත්ත හඳුනා ගැනීමට නොහැකි විය.")
+
+# --- FOOTER SECTION ---
+st.markdown("---")
+st.markdown(
+    """
+    <style>
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: transparent;
+        color: gray;
+        text-align: center;
+        padding: 10px;
+        font-size: 14px;
+    }
+    </style>
+    <div class="footer">
+        <p>Developed by Ishanka Madusanka</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 else:
     st.warning("කරුණාකර API Key එක ඇතුළත් කරන්න.")
+    # Sidebar එක නැති වෙලාවටත් යටින් නම පෙන්වීමට
+    st.markdown("<br><br><p style='text-align: center; color: gray;'>Developed by Ishanka Madusanka</p>", unsafe_allow_html=True)
