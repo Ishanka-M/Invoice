@@ -5,108 +5,107 @@ import json
 from PIL import Image
 import io
 
-# පිටුවේ සැකසුම් (Page Config)
-st.set_page_config(page_title="Invoice Data Extractor", layout="wide", page_icon="📊")
+# පිටුවේ සැකසුම්
+st.set_page_config(page_title="Invoice Data Extractor", layout="wide", page_icon="📝")
 
-# --- SIDEBAR කොටස ---
+# --- SIDEBAR (Settings) ---
 with st.sidebar:
-    st.title("⚙️ Settings")
+    st.title("⚙️ සැකසුම් (Settings)")
     st.markdown("---")
-    # API Key එක ලබා ගැනීම (හිස්තැන් ඉවත් කිරීමට .strip() භාවිතා කර ඇත)
-    user_api_key = st.text_input("Gemini API Key එක ඇතුළත් කරන්න:", type="password", help="Google AI Studio වෙතින් ලබාගත් Key එක මෙතැනට ලබා දෙන්න.")
+    # API Key එක ලබා ගැනීම සහ දෙපස හිස්තැන් ඉවත් කිරීම
+    user_api_key = st.text_input("Gemini API Key එක ඇතුළත් කරන්න:", type="password")
     st.markdown("---")
-    st.info("මෙම Tool එක මගින් Invoice වල ඇති දත්ත ස්වයංක්‍රීයව හඳුනාගෙන Excel ගොනුවක් සාදා දෙයි.")
+    st.write("💡 **උදවු:** Google AI Studio එකෙන් ගත් API Key එක මෙතැනට ලබා දෙන්න.")
 
-# --- ප්‍රධාන පිටුව (Main UI) ---
-st.title("📄 Invoice to Excel Converter")
-st.write("Invoice එකක රූපයක් (Image) හෝ PDF එකක් Upload කර පහසුවෙන් දත්ත ලබා ගන්න.")
+# --- MAIN UI ---
+st.title("📊 Invoice to Excel Converter")
+st.info("Invoice එකක Image එකක් හෝ PDF එකක් ලබා දී තත්පර කිහිපයකින් Excel ගොනුව ලබා ගන්න.")
 
-# API Key එක ඇතුළත් කර ඇත්නම් පමණක් වැඩසටහන ක්‍රියාත්මක වේ
 if user_api_key:
     try:
-        # Gemini API Configure කිරීම
+        # Gemini API එක සකස් කිරීම
         genai.configure(api_key=user_api_key.strip())
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # 404 Error එක මඟහරවා ගැනීමට වඩාත් සුදුසු Model එක තෝරා ගැනීම
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-        # File Uploader
-        uploaded_file = st.file_uploader("Invoice එක තෝරන්න (JPG, PNG, PDF)...", type=["jpg", "jpeg", "png", "pdf"])
+        # ගොනු ලබා ගැනීම (Image & PDF)
+        uploaded_file = st.file_uploader("ඔබේ Invoice එක මෙතැනට Upload කරන්න...", type=["jpg", "jpeg", "png", "pdf"])
 
         if uploaded_file is not None:
-            st.success(f"File එක සාර්ථකව සම්බන්ධ කරන ලදී: {uploaded_file.name}")
+            st.success(f"File එක සම්බන්ධයි: {uploaded_file.name}")
             
-            # Extract Button
             if st.button("දත්ත ලබා ගන්න (Extract Data)"):
-                with st.spinner("Gemini AI මගින් දත්ත කියවමින් පවතී..."):
+                with st.spinner("AI මගින් දත්ත පරීක්ෂා කරමින් පවතී..."):
                     try:
-                        # Prompt එක සකස් කිරීම
+                        # AI එකට ලබා දෙන උපදෙස් (Prompt)
                         prompt = """
-                        Please analyze this invoice document and extract the following information. 
-                        Format the output strictly as a JSON object with these keys:
-                        - "Invoice No": String
-                        - "Delivery No": String
-                        - "Items": List of objects, each containing:
-                            - "Product Code / Description": String
-                            - "Unit of Measure": String
-                            - "Quantity": Number
-                            - "Net Price": Number
-                            - "Amount": Number
-                        
-                        If a value is missing, use "N/A". Only return the raw JSON.
+                        Look at this invoice and extract the following details. 
+                        Format the output as a valid JSON object with these exact keys:
+                        {
+                          "Invoice No": "string",
+                          "Delivery No": "string",
+                          "Items": [
+                            {
+                              "Product Code / Description": "string",
+                              "Unit of Measure": "string",
+                              "Quantity": number,
+                              "Net Price": number,
+                              "Amount": number
+                            }
+                          ]
+                        }
+                        If any detail is missing, put "N/A". Return ONLY the JSON.
                         """
 
-                        # ගොනුව සකස් කිරීම
-                        document_content = {
+                        # ගොනුවේ දත්ත සකස් කිරීම
+                        doc_data = {
                             "mime_type": uploaded_file.type,
                             "data": uploaded_file.getvalue()
                         }
 
                         # AI ප්‍රතිචාරය ලබා ගැනීම
-                        response = model.generate_content([prompt, document_content])
+                        response = model.generate_content([prompt, doc_data])
                         
-                        # JSON දත්ත පිරිසිදු කර Extract කිරීම
-                        raw_text = response.text.replace('```json', '').replace('```', '').strip()
-                        extracted_data = json.loads(raw_text)
+                        # JSON කොටස පමණක් වෙන් කර ගැනීම
+                        raw_response = response.text.replace('```json', '').replace('```', '').strip()
+                        data = json.loads(raw_response)
 
-                        # Data Display
-                        inv_no = extracted_data.get("Invoice No", "N/A")
-                        del_no = extracted_data.get("Delivery No", "N/A")
+                        # ප්‍රධාන විස්තර පෙන්වීම
+                        inv_no = data.get("Invoice No", "N/A")
+                        del_no = data.get("Delivery No", "N/A")
                         
-                        st.subheader(f"Invoice විස්තර: {inv_no}")
                         col1, col2 = st.columns(2)
-                        col1.metric("Invoice No", inv_no)
-                        col2.metric("Delivery No", del_no)
+                        col1.info(f"**Invoice No:** {inv_no}")
+                        col2.info(f"**Delivery No:** {del_no}")
 
-                        # Table එක සෑදීම
-                        df = pd.DataFrame(extracted_data.get("Items", []))
+                        # වගුව (Table) සකස් කිරීම
+                        df = pd.DataFrame(data.get("Items", []))
                         
-                        # Invoice තොරතුරු Table එකට එකතු කිරීම
+                        # පළමු තීරු ලෙස Invoice/Delivery No එකතු කිරීම (Excel එකේ ලෙහෙසියට)
                         df.insert(0, "Invoice No", inv_no)
                         df.insert(1, "Delivery No", del_no)
 
-                        # වගුව පෙන්වීම
+                        # වගුව Screen එකේ පෙන්වීම
                         st.dataframe(df, use_container_width=True)
 
-                        # Excel එකක් ලෙස සකස් කිරීම
-                        excel_buffer = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Sheet1')
+                        # Excel ගොනුව සෑදීම
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                            df.to_excel(writer, index=False, sheet_name='Data')
                         
                         st.download_button(
-                            label="📥 Excel ගොනුව බාගත කරගන්න (Download)",
-                            data=excel_buffer.getvalue(),
+                            label="📥 Excel ගොනුව බාගත කරගන්න",
+                            data=output.getvalue(),
                             file_name=f"Invoice_{inv_no}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
 
                     except Exception as e:
-                        st.error(f"දත්ත කියවීමේදී ගැටලුවක් ඇති විය: {e}")
-                        st.info("ඔබේ API Key එක නිවැරදිද සහ අන්තර්ජාල පහසුකම් පරීක්ෂා කරන්න.")
+                        st.error(f"දත්ත කියවීමේදී දෝෂයක් ඇති විය: {str(e)}")
+                        st.warning("සටහන: ඔබගේ API Key එකට Gemini 1.5 Flash පහසුකම ලැබී ඇත්දැයි බලන්න.")
 
     except Exception as e:
-        st.error(f"API Configuration දෝෂයකි: {e}")
+        st.error(f"සම්බන්ධතාවයේ දෝෂයකි: {str(e)}")
 else:
-    st.warning("⚠️ කරුණාකර වම් පස ඇති Sidebar එකේ ඔබේ Gemini API Key එක ඇතුළත් කරන්න.")
-
-# Footer
-st.markdown("---")
-st.caption("Powered by Gemini 1.5 Flash AI")
+    st.warning("අඛණ්ඩව වැඩ කිරීමට කරුණාකර වම් පස ඇති Sidebar එකට API Key එක ලබා දෙන්න.")
